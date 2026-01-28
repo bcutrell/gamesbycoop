@@ -11,7 +11,7 @@ func main() {
 	ebiten.SetWindowSize(game.ScreenWidth, game.ScreenHeight)
 	ebiten.SetWindowTitle("Jump on Blocks")
 	ebiten.SetVsyncEnabled(true)
-	ebiten.SetTPS(30)                       // Lower tick rate to reduce GPU load
+	ebiten.SetTPS(60)                       // 60 TPS for smooth physics
 	ebiten.SetRunnableOnUnfocused(false)    // Pause when window not focused
 	ebiten.SetScreenClearedEveryFrame(true) // Explicit screen clearing
 
