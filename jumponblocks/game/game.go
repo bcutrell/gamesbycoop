@@ -5,6 +5,7 @@ import (
 	"image/color"
 
 	"jumponblocks/screens"
+	"jumponblocks/sprites"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
@@ -12,39 +13,69 @@ import (
 )
 
 type Game struct {
-	state          GameState
-	flashTimer     int
-	coverScreen    *screens.CoverScreen
-	gameplayScreen *screens.GameplayScreen
-	gameOverScreen *screens.GameOverScreen
-	font           text.Face
-	clickLock      bool
-	bestScore      int
-	lastScore      int
+	state            GameState
+	flashTimer       int
+	coverScreen      *screens.CoverScreen
+	charSelectScreen *screens.CharSelectScreen
+	gameplayScreen   *screens.GameplayScreen
+	gameOverScreen   *screens.GameOverScreen
+	font             text.Face
+	clickLock        bool
+	bestScore        int
+	wallet           float64
 }
 
 func NewGame() *Game {
-	g := &Game{state: StateCover}
+	g := &Game{state: StateCover, wallet: 0.00} // Start with $0
 	g.font = text.NewGoXFace(basicfont.Face7x13)
 
-	// Set up cover screen
-	g.coverScreen = screens.NewCoverScreen(func() {
-		if !g.clickLock {
-			g.state = StateFlash
-			g.flashTimer = FlashDuration
-			g.clickLock = true
-		}
-	})
-
-	// Set up gameplay screen
+	// Set up gameplay screen first so we can reference it
 	g.gameplayScreen = screens.NewGameplayScreen(func(score int) {
-		g.lastScore = score
 		if score > g.bestScore {
 			g.bestScore = score
+			g.coverScreen.SetBestScore(score)
 		}
+		g.wallet += float64(score) * 0.10 // $0.10 per second survived
 		g.state = StateGameOver
 		g.gameOverScreen.SetScore(score)
 	})
+
+	// Set up cover screen
+	g.coverScreen = screens.NewCoverScreen(
+		func() {
+			// Play button
+			if !g.clickLock {
+				g.state = StateFlash
+				g.flashTimer = FlashDuration
+				g.clickLock = true
+			}
+		},
+		func() {
+			// Character select button
+			if !g.clickLock {
+				g.charSelectScreen.SetSelectedChar(g.coverScreen.GetSelectedCharacter())
+				g.state = StateCharSelect
+				g.clickLock = true
+			}
+		},
+	)
+
+	// Connect wallet to cover screen
+	g.coverScreen.SetWallet(&g.wallet)
+
+	// Set up character selection screen
+	g.charSelectScreen = screens.NewCharSelectScreen(
+		&g.wallet,
+		func() {
+			// Back button
+			g.state = StateCover
+		},
+		func(charType sprites.CharacterType) {
+			// Character selected
+			g.gameplayScreen.SetCharacter(charType)
+			g.coverScreen.SetSelectedCharacter(charType)
+		},
+	)
 
 	// Set up game over screen
 	g.gameOverScreen = screens.NewGameOverScreen(
@@ -76,6 +107,8 @@ func (g *Game) Update() error {
 	switch g.state {
 	case StateCover:
 		g.coverScreen.Update()
+	case StateCharSelect:
+		g.charSelectScreen.Update()
 	case StateFlash:
 		g.flashTimer--
 		if g.flashTimer <= 0 {
@@ -95,6 +128,9 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	case StateCover:
 		screen.Fill(ColorBackground)
 		g.coverScreen.Draw(screen, g.font)
+	case StateCharSelect:
+		screen.Fill(ColorBackground)
+		g.charSelectScreen.Draw(screen, g.font)
 	case StateFlash:
 		screen.Fill(ColorFlashBg)
 		// Show countdown: 3, 2, 1, Go!
@@ -117,18 +153,20 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	case StatePlaying:
 		screen.Fill(ColorBackground)
 		g.gameplayScreen.Draw(screen)
-		// Draw score at top center
-		scoreMsg := fmt.Sprintf("Score: %d", g.gameplayScreen.GetScore())
+		// Draw earnings at top center
+		earnings := float64(g.gameplayScreen.GetScore()) * 0.10
+		earningsMsg := fmt.Sprintf("$%.2f", earnings)
 		op := &text.DrawOptions{}
-		sw, _ := text.Measure(scoreMsg, g.font, 0)
+		sw, _ := text.Measure(earningsMsg, g.font, 0)
 		op.GeoM.Translate(float64(ScreenWidth)/2-sw/2, 30)
-		op.ColorScale.ScaleWithColor(color.White)
-		text.Draw(screen, scoreMsg, g.font, op)
+		op.ColorScale.ScaleWithColor(color.RGBA{255, 215, 0, 255}) // Gold color
+		text.Draw(screen, earningsMsg, g.font, op)
 	case StateGameOver:
 		screen.Fill(ColorFlashBg)
 		g.gameOverScreen.Draw(screen, g.font)
-		// Show best score
-		bestMsg := fmt.Sprintf("Best: %d", g.bestScore)
+		// Show best earnings
+		bestEarnings := float64(g.bestScore) * 0.10
+		bestMsg := fmt.Sprintf("Best: $%.2f", bestEarnings)
 		op := &text.DrawOptions{}
 		bw, _ := text.Measure(bestMsg, g.font, 0)
 		op.GeoM.Translate(float64(ScreenWidth)/2-bw/2, 240)

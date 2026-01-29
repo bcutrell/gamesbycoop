@@ -11,9 +11,9 @@ import (
 )
 
 type GameOverScreen struct {
-	score           int
+	earnings        float64
 	titleLabel      *ui.Label
-	scoreLabel      *ui.Label
+	earningsLabel   *ui.Label
 	playAgainButton *ui.Button
 	menuButton      *ui.Button
 }
@@ -29,11 +29,11 @@ func NewGameOverScreen(onPlayAgain, onMenu func()) *GameOverScreen {
 			Color:    color.White,
 			Centered: true,
 		},
-		scoreLabel: &ui.Label{
-			Text:     "Score: 0",
+		earningsLabel: &ui.Label{
+			Text:     "Earned: $0.00",
 			X:        centerX,
 			Y:        200,
-			Color:    color.White,
+			Color:    color.RGBA{255, 215, 0, 255}, // Gold
 			Centered: true,
 		},
 		playAgainButton: ui.NewButton(
@@ -61,8 +61,8 @@ func NewGameOverScreen(onPlayAgain, onMenu func()) *GameOverScreen {
 }
 
 func (gos *GameOverScreen) SetScore(score int) {
-	gos.score = score
-	gos.scoreLabel.Text = fmt.Sprintf("Score: %d", score)
+	gos.earnings = float64(score) * 0.10
+	gos.earningsLabel.Text = fmt.Sprintf("Earned: $%.2f", gos.earnings)
 }
 
 func (gos *GameOverScreen) Update() {
@@ -72,7 +72,7 @@ func (gos *GameOverScreen) Update() {
 
 func (gos *GameOverScreen) Draw(screen *ebiten.Image, face text.Face) {
 	gos.titleLabel.Draw(screen, face)
-	gos.scoreLabel.Draw(screen, face)
+	gos.earningsLabel.Draw(screen, face)
 	gos.playAgainButton.Draw(screen, face)
 	gos.menuButton.Draw(screen, face)
 }

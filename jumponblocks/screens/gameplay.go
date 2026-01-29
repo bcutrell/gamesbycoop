@@ -27,36 +27,46 @@ type Player struct {
 }
 
 type Block struct {
-	X, Y   float64
-	Width  float64
-	Height float64
-	VelY   float64
+	X, Y       float64
+	Width      float64
+	Height     float64
+	VelY       float64
+	IsStarting bool // True if this is the starting block
 }
 
 type GameplayScreen struct {
-	player       *Player
-	blocks       []*Block
-	blockImage   *ebiten.Image
-	character    *ebiten.Image
-	score        float64
-	spawnTimer   int
-	blockSpeed   float64
-	gameOver     bool
-	onGameOver   func(score int)
+	player              *Player
+	blocks              []*Block
+	blockImage          *ebiten.Image
+	character           *ebiten.Image
+	characterType       sprites.CharacterType
+	score               float64
+	spawnTimer          int
+	blockSpeed          float64
+	gameOver            bool
+	onGameOver          func(score int)
+	startingBlockActive bool // Whether starting block is still present
+	wasOnStartingBlock  bool // Track if player was on starting block
 }
 
 func NewGameplayScreen(onGameOver func(score int)) *GameplayScreen {
 	gs := &GameplayScreen{
-		blocks:     make([]*Block, 0),
-		blockImage: sprites.NewBlock(blockWidth, blockHeight),
-		character:  sprites.NewSmileyFace(),
-		blockSpeed: 1.5,
-		onGameOver: onGameOver,
+		blocks:        make([]*Block, 0),
+		blockImage:    sprites.NewBlock(blockWidth, blockHeight),
+		character:     sprites.NewSmileyFace(),
+		characterType: sprites.CharacterSmiley,
+		blockSpeed:    1.5,
+		onGameOver:    onGameOver,
 	}
 
 	gs.spawnInitialBlocks()
 
 	return gs
+}
+
+func (gs *GameplayScreen) SetCharacter(charType sprites.CharacterType) {
+	gs.characterType = charType
+	gs.character = sprites.NewCharacter(charType)
 }
 
 func (gs *GameplayScreen) spawnInitialBlocks() {
@@ -65,21 +75,25 @@ func (gs *GameplayScreen) spawnInitialBlocks() {
 	startBlockX := float64(ScreenWidth)/2 - blockWidth/2
 
 	gs.blocks = append(gs.blocks, &Block{
-		X:      startBlockX,
-		Y:      startBlockY,
-		Width:  blockWidth,
-		Height: blockHeight,
-		VelY:   0, // Starting block doesn't move initially
+		X:          startBlockX,
+		Y:          startBlockY,
+		Width:      blockWidth,
+		Height:     blockHeight,
+		VelY:       0, // Starting block doesn't move initially
+		IsStarting: true,
 	})
 
 	// Place player ON the starting block
 	gs.player = &Player{
-		X:      startBlockX + blockWidth/2 - 30,
-		Y:      startBlockY - 60, // On top of block
-		Width:  60,
-		Height: 60,
+		X:        startBlockX + blockWidth/2 - 30,
+		Y:        startBlockY - 60, // On top of block
+		Width:    60,
+		Height:   60,
 		OnGround: true,
 	}
+
+	gs.startingBlockActive = true
+	gs.wasOnStartingBlock = true
 
 	// Spawn additional blocks at various heights for jumping
 	blockPositions := []struct{ x, y float64 }{
@@ -107,8 +121,26 @@ func (gs *GameplayScreen) Reset() {
 	gs.spawnTimer = 0
 	gs.blockSpeed = 1.5
 	gs.gameOver = false
+	gs.startingBlockActive = false
+	gs.wasOnStartingBlock = false
+	// Refresh character in case it changed
+	gs.character = sprites.NewCharacter(gs.characterType)
 
 	gs.spawnInitialBlocks()
+}
+
+func (gs *GameplayScreen) removeStartingBlock() {
+	if !gs.startingBlockActive {
+		return
+	}
+	newBlocks := make([]*Block, 0, len(gs.blocks))
+	for _, b := range gs.blocks {
+		if !b.IsStarting {
+			newBlocks = append(newBlocks, b)
+		}
+	}
+	gs.blocks = newBlocks
+	gs.startingBlockActive = false
 }
 
 func (gs *GameplayScreen) spawnBlock() {
@@ -169,13 +201,30 @@ func (gs *GameplayScreen) Update() {
 
 	// Check block collisions (landing on blocks)
 	gs.player.OnGround = false
+	onStartingBlock := false
 	for _, b := range gs.blocks {
 		if gs.checkBlockCollision(b) {
 			gs.player.OnGround = true
 			gs.player.VelY = b.VelY // Move with the block
 			gs.player.Y = b.Y - gs.player.Height
+			if b.IsStarting {
+				onStartingBlock = true
+			}
 		}
 	}
+
+	// Check if player jumped off starting block OR score reached 5
+	if gs.startingBlockActive {
+		// Player was on starting block but isn't anymore (jumped off)
+		if gs.wasOnStartingBlock && !onStartingBlock {
+			gs.removeStartingBlock()
+		}
+		// Score reached 5
+		if gs.score >= 5.0 {
+			gs.removeStartingBlock()
+		}
+	}
+	gs.wasOnStartingBlock = onStartingBlock
 
 	// Check spike collisions (edges)
 	if gs.checkSpikeCollision() {
@@ -189,15 +238,8 @@ func (gs *GameplayScreen) Update() {
 	// Update score (time survived)
 	gs.score += 1.0 / 60.0 // 1 point per second at 60 TPS
 
-	// Gradually increase difficulty
-	if gs.score > 0 && int(gs.score)%10 == 0 {
-		if gs.blockSpeed < 6.0 {
-			gs.blockSpeed = 2.0 + gs.score*0.05
-			if gs.blockSpeed > 6.0 {
-				gs.blockSpeed = 6.0
-			}
-		}
-	}
+	// Gradually increase difficulty based on score
+	gs.blockSpeed = min(1.5+gs.score*0.05, 6.0)
 }
 
 func (gs *GameplayScreen) checkBlockCollision(b *Block) bool {

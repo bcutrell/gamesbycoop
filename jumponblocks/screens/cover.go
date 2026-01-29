@@ -1,6 +1,7 @@
 package screens
 
 import (
+	"fmt"
 	"image/color"
 
 	"jumponblocks/sprites"
@@ -25,12 +26,14 @@ type CoverScreen struct {
 	levelLabel     *ui.Label
 	playButton     *ui.Button
 	bestScoreLabel *ui.Label
-	pickCharLabel  *ui.Label
+	pickCharButton *ui.Button
 	incomeLabel    *ui.Label
 	character      *ebiten.Image
+	selectedChar   sprites.CharacterType
+	wallet         *float64
 }
 
-func NewCoverScreen(onPlay func()) *CoverScreen {
+func NewCoverScreen(onPlay func(), onCharSelect func()) *CoverScreen {
 	centerX := float64(ScreenWidth) / 2
 
 	cs := &CoverScreen{
@@ -55,12 +58,14 @@ func NewCoverScreen(onPlay func()) *CoverScreen {
 			Y:     ScreenHeight - 80,
 			Color: ColorText,
 		},
-		pickCharLabel: &ui.Label{
-			Text:  "Player",
-			X:     ScreenWidth - 95,
-			Y:     ScreenHeight - 80,
-			Color: ColorText,
-		},
+		pickCharButton: ui.NewButton(
+			"Player",
+			ScreenWidth-100, ScreenHeight-95,
+			80, 30,
+			ColorButton,
+			ColorButtonHover,
+			ColorText,
+		),
 		incomeLabel: &ui.Label{
 			Text:     "$0.00",
 			X:        centerX,
@@ -68,22 +73,48 @@ func NewCoverScreen(onPlay func()) *CoverScreen {
 			Color:    ColorText,
 			Centered: true,
 		},
-		character: sprites.NewSmileyFace(),
+		character:    sprites.NewSmileyFace(),
+		selectedChar: sprites.CharacterSmiley,
 	}
 
 	cs.playButton.OnClick = onPlay
+	cs.pickCharButton.OnClick = onCharSelect
 
 	return cs
 }
 
+func (cs *CoverScreen) SetWallet(wallet *float64) {
+	cs.wallet = wallet
+}
+
+func (cs *CoverScreen) SetBestScore(best int) {
+	earnings := float64(best) * 0.10
+	cs.bestScoreLabel.Text = fmt.Sprintf("Best: $%.2f", earnings)
+}
+
+func (cs *CoverScreen) SetSelectedCharacter(charType sprites.CharacterType) {
+	cs.selectedChar = charType
+	cs.character = sprites.NewCharacter(charType)
+}
+
+func (cs *CoverScreen) GetSelectedCharacter() sprites.CharacterType {
+	return cs.selectedChar
+}
+
 func (cs *CoverScreen) Update() {
 	cs.playButton.Update()
+	cs.pickCharButton.Update()
+
+	// Update income label from wallet
+	if cs.wallet != nil {
+		cs.incomeLabel.Text = fmt.Sprintf("$%.2f", *cs.wallet)
+	}
 }
 
 func (cs *CoverScreen) Draw(screen *ebiten.Image, face text.Face) {
 	cs.levelLabel.Draw(screen, face)
 	cs.bestScoreLabel.Draw(screen, face)
-	cs.pickCharLabel.Draw(screen, face)
+	cs.pickCharButton.Draw(screen, face)
 	cs.incomeLabel.Draw(screen, face)
 	cs.playButton.Draw(screen, face)
 

@@ -4,6 +4,7 @@ type GameState int
 
 const (
 	StateCover GameState = iota
+	StateCharSelect
 	StateFlash
 	StatePlaying
 	StateGameOver
