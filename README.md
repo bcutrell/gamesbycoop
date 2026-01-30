@@ -7,3 +7,5 @@ Built with [Claude Code](https://claude.ai/code) + Dad for debugging.
 ## Games
 
 - **jumponblocks** - `cd jumponblocks && go run .`
+
+![jumponblocks gameplay](jumponblocks/gameplay.gif)
