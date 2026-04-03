@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dont Fall Ball</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <style>
+        :root {
+            --red: #FF0000;
+            --orange: #FF7F00;
+            --yellow: #FFFF00;
+            --green: #00FF00;
+            --blue: #0000FF;
+            --ui-bg: rgba(255, 255, 255, 0.95);
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8f9fa;
+        }
+
+        #game-ui {
+            position: absolute;
+            top: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .panel {
+            background: var(--ui-bg);
+            border: 4px solid #333;
+            padding: 15px;
+            border-radius: 12px;
+            pointer-events: auto;
+            box-shadow: 4px 4px 0px #333;
+        }
+
+        .controls-group {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .button-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        .game-btn {
+            padding: 10px 15px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            border: 3px solid #333;
+            border-radius: 8px;
+            background: white;
+            transition: transform 0.1s;
+        }
+
+        .game-btn:active { transform: translateY(2px); }
+        .selected { background: var(--yellow) !important; border-color: #000; }
+
+        #timer-display {
+            font-size: 48px;
+            font-weight: 900;
+            color: var(--red);
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .shape-label {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 5px;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-ui">
+    <div class="controls-group">
+        <div class="panel button-row">
+            <button class="game-btn" id="play-btn" onclick="handleStart()">▶ Play</button>
+            <button class="game-btn" onclick="handleReset()">🔄 Reset</button>
+        </div>
+
+        <div class="panel">
+            <span class="shape-label">Inventory:</span>
+            <div class="button-row">
+                <button class="game-btn" id="tool-square" onclick="setTool('square')" style="border-bottom: 5px solid var(--orange);">3x ⬜</button>
+                <button class="game-btn" id="tool-triangle" onclick="setTool('triangle')" style="border-bottom: 5px solid var(--yellow);">3x △</button>
+                <button class="game-btn" id="tool-circle" onclick="setTool('circle')" style="border-bottom: 5px solid var(--green);">3x ○</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div id="timer-display">10</div>
+    </div>
+</div>
+
+<script>
+    // --- Configuration & Constants ---
+    const COLORS = {
+        hole: '#FF0000',   // Red
+        square: '#FF7F00', // Orange
+        triangle: '#FFFF00', // Yellow
+        circle: '#00FF00', // Green
+        ball: '#0000FF'    // Blue
+    };
+
+    const { Engine, Render, Runner, Bodies, Composite, Events } = Matter;
+    
+    let engine, render, runner;
+    let ball, hole;
+    let gameTimer = 10;
+    let isGameRunning = false;
+    let timerClock;
+
+    let activeTool = null;
+    let shapeInventory = { square: 3, triangle: 3, circle: 3 };
+
+    /**
+     * Initializes the physics world and game objects
+     */
+    function initGame() {
+        engine = Engine.create();
+        render = Render.create({
+            element: document.body,
+            engine: engine,
+            options: {
+                width: window.innerWidth,
+                height: window.innerHeight,
+                wireframes: false,
+                background: '#ffffff'
+            }
+        });
+
+        // The Ball: Starts static in the middle
+        ball = Bodies.circle(window.innerWidth / 2, 100, 22, {
+            render: { fillStyle: COLORS.ball },
+            isStatic: true,
+            label: 'player_ball',
+            restitution: 0.5 // Add a little bounce
+        });
+
+        // The Hole: At the bottom
+        hole = Bodies.rectangle(window.innerWidth / 2, window.innerHeight - 30, 220, 60, {
+            isStatic: true,
+            isSensor: true,
+            render: { fillStyle: COLORS.hole },
+            label: 'danger_zone'
+        });
+
+        // Boundary walls to keep ball on screen
+        const walls = [
+            Bodies.rectangle(window.innerWidth/2, window.innerHeight + 60, window.innerWidth, 100, { isStatic: true }),
+            Bodies.rectangle(-50, window.innerHeight/2, 100, window.innerHeight, { isStatic: true }),
+            Bodies.rectangle(window.innerWidth + 50, window.innerHeight/2, 100, window.innerHeight, { isStatic: true })
+        ];
+
+        Composite.add(engine.world, [ball, hole, ...walls]);
+
+        Render.run(render);
+        runner = Runner.create();
+        Runner.run(runner, engine);
+
+        // Detect if the ball falls into the hole
+        Events.on(engine, 'collisionStart', (event) => {
+            event.pairs.forEach((pair) => {
+                const labels = [pair.bodyA.label, pair.bodyB.label];
+                if (labels.includes('player_ball') && labels.includes('danger_zone')) {
+                    endGame(false);
+                }
+            });
+        });
+    }
+
+    /**
+     * Sets the current building tool
+     */
+    function setTool(shapeType) {
+        if (shapeInventory[shapeType] > 0) {
+            activeTool = shapeType;
+            // Visual feedback for selection
+            document.querySelectorAll('.game-btn').forEach(btn => btn.classList.remove('selected'));
+            document.getElementById(`tool-${shapeType}`).classList.add('selected');
+        }
+    }
+
+    /**
+     * Places a shape when the user clicks on the canvas
+     */
+    window.addEventListener('mousedown', (event) => {
+        if (!activeTool || isGameRunning) return;
+        
+        // Ensure we aren't clicking on a UI button
+        if (event.target.tagName !== 'CANVAS') return;
+
+        const { clientX: x, clientY: y } = event;
+        let newShape;
+
+        if (activeTool === 'square') {
+            newShape = Bodies.rectangle(x, y, 60, 60, { isStatic: true, render: { fillStyle: COLORS.square } });
+        } else if (activeTool === 'triangle') {
+            // Fix: Triangle in Matter.js points up by default at 0 radians
+            // We ensure it is perfectly upright
+            newShape = Bodies.polygon(x, y, 3, 45, { 
+                isStatic: true, 
+                render: { fillStyle: COLORS.triangle },
+                angle: 0 
+            });
+        } else if (activeTool === 'circle') {
+            newShape = Bodies.circle(x, y, 35, { isStatic: true, render: { fillStyle: COLORS.circle } });
+        }
+
+        if (newShape) {
+            shapeInventory[activeTool]--;
+            refreshInventoryUI();
+            Composite.add(engine.world, newShape);
+            activeTool = null;
+            document.querySelectorAll('.game-btn').forEach(btn => btn.classList.remove('selected'));
+        }
+    });
+
+    function refreshInventoryUI() {
+        document.getElementById('tool-square').innerText = `${shapeInventory.square}x ⬜`;
+        document.getElementById('tool-triangle').innerText = `${shapeInventory.triangle}x △`;
+        document.getElementById('tool-circle').innerText = `${shapeInventory.circle}x ○`;
+    }
+
+    function handleStart() {
+        if (isGameRunning) return;
+        isGameRunning = true;
+        document.getElementById('play-btn').disabled = true;
+
+        // Release the ball
+        Matter.Body.setStatic(ball, false);
+        
+        timerClock = setInterval(() => {
+            gameTimer--;
+            document.getElementById('timer-display').innerText = gameTimer;
+            if (gameTimer <= 0) {
+                endGame(true);
+            }
+        }, 1000);
+    }
+
+    function endGame(hasWon) {
+        clearInterval(timerClock);
+        isGameRunning = false;
+        
+        setTimeout(() => {
+            alert(hasWon ? "VICTORY! You saved the ball! 🎉" : "OH NO! The ball fell in! 🕳️");
+            handleReset();
+        }, 100);
+    }
+
+    function handleReset() {
+        window.location.reload(); 
+    }
+
+    // Start the engine
+    initGame();
+</script>
+</body>
+</html>
